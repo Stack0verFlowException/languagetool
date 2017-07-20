@@ -65,6 +65,35 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
     }
   }
 
+    public GermanSpellerRule(ResourceBundle messages, German language, File additionalSpellingFile) {
+        super(messages, language, language.getNonStrictCompoundSplitter(), additionalSpellingFile == null ? getSpeller(language) : getSpeller(language,additionalSpellingFile));
+        addExamplePair(Example.wrong("LanguageTool kann mehr als eine <marker>nromale</marker> Rechtschreibprüfung."),
+                Example.fixed("LanguageTool kann mehr als eine <marker>normale</marker> Rechtschreibprüfung."));
+        compoundTokenizer = language.getStrictCompoundTokenizer();
+        tagger = language.getTagger();
+        synthesizer = language.getSynthesizer();
+        try {
+            splitter = new GermanWordSplitter(false);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+  public GermanSpellerRule(ResourceBundle messages, German language, List<String> additionalWords) {
+    super(messages, language, language.getNonStrictCompoundSplitter(), additionalWords == null ? getSpeller(language) : getSpeller(language,additionalWords));
+    addExamplePair(Example.wrong("LanguageTool kann mehr als eine <marker>nromale</marker> Rechtschreibprüfung."),
+            Example.fixed("LanguageTool kann mehr als eine <marker>normale</marker> Rechtschreibprüfung."));
+    compoundTokenizer = language.getStrictCompoundTokenizer();
+    tagger = language.getTagger();
+    synthesizer = language.getSynthesizer();
+    try {
+      splitter = new GermanWordSplitter(false);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+
   @Override
   protected void init() throws IOException {
     super.init();
@@ -139,6 +168,35 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
 
   @Nullable
   private static MorfologikMultiSpeller getSpeller(Language language) {
+    return getSpeller(language, new ByteArrayInputStream(new byte[0]));
+  }
+
+  @Nullable
+  private static MorfologikMultiSpeller getSpeller(Language language, List<String> additionalWords) {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    for (String line : additionalWords) {
+      try {
+        line += "\r\n";
+        baos.write(line.getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+    byte[] bytes = baos.toByteArray();
+    return getSpeller(language, new ByteArrayInputStream(bytes));
+  }
+
+  @Nullable
+  private static MorfologikMultiSpeller getSpeller(Language language, File additionalSpellingFile) {
+    try {
+      return getSpeller(language,new FileInputStream(additionalSpellingFile));
+    } catch (FileNotFoundException e) {
+      e.printStackTrace();
+    }
+    return null;
+  }
+
+  private static MorfologikMultiSpeller getSpeller(Language language, InputStream additionalWords){
     if (!language.getShortCode().equals(Locale.GERMAN.getLanguage())) {
       throw new RuntimeException("Language is not a variant of German: " + language);
     }
@@ -146,8 +204,8 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
       String morfoFile = "/de/hunspell/de_" + language.getCountries()[0] + ".dict";
       if (JLanguageTool.getDataBroker().resourceExists(morfoFile)) {
         // spell data will not exist in LibreOffice/OpenOffice context
-        try (InputStream stream = JLanguageTool.getDataBroker().getFromResourceDirAsStream("/de/hunspell/spelling.txt");
-             BufferedReader br = new BufferedReader(new InputStreamReader(stream, "utf-8"))) {
+        try (InputStream streamDefault = JLanguageTool.getDataBroker().getFromResourceDirAsStream("/de/hunspell/spelling.txt");
+             BufferedReader br = new BufferedReader(new InputStreamReader(new SequenceInputStream(streamDefault, additionalWords), "utf-8"))) {
           return new MorfologikMultiSpeller(morfoFile, new ExpandingReader(br), MAX_EDIT_DISTANCE);
         }
       } else {
@@ -467,7 +525,7 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
       // only search for compounds that start(!) with a word from spelling.txt
       int end = super.startsWithIgnoredWord(word, true);
       if (end < 3) {
-    	// support for geographical adjectives - although "süd/ost/west/nord" are not in spelling.txt 
+    	// support for geographical adjectives - although "süd/ost/west/nord" are not in spelling.txt
     	// to accept sentences such as
     	// "Der westperuanische Ferienort, das ostargentinische Städtchen, das südukrainische Brauchtum, der nordägyptische Staudamm."
     	if (word.startsWith("ost") || word.startsWith("süd")) {
