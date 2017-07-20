@@ -21,12 +21,29 @@ package org.languagetool.language;
 import org.languagetool.rules.Rule;
 import org.languagetool.rules.de.GermanSpellerRule;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ResourceBundle;
 
 public class GermanyGerman extends German {
+
+  private File additionalSpellingFile;
+  private List<String> additionalWords;
+
+
+  public GermanyGerman() {
+    additionalSpellingFile = null;
+  }
+
+  public GermanyGerman( File additionalSpellingFile) {
+    this.additionalSpellingFile = additionalSpellingFile;
+  }
+
+  public GermanyGerman(List<String> additionalWords) {
+    this.additionalWords = additionalWords;
+  }
 
   @Override
   public String[] getCountries() {
@@ -41,7 +58,13 @@ public class GermanyGerman extends German {
   @Override
   public List<Rule> getRelevantRules(ResourceBundle messages) throws IOException {
     List<Rule> rules = new ArrayList<>(super.getRelevantRules(messages));
-    rules.add(new GermanSpellerRule(messages, this));
+    if (additionalSpellingFile == null && additionalWords == null){
+      rules.add(new GermanSpellerRule(messages, this));
+    }else if (additionalSpellingFile != null && additionalWords == null){
+      rules.add(new GermanSpellerRule(messages, this, additionalSpellingFile));
+    }else {
+      rules.add(new GermanSpellerRule(messages, this, additionalWords));
+    }
     return rules;
   }
   
