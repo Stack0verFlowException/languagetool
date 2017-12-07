@@ -1,6 +1,6 @@
-/* LanguageTool, a natural language style checker 
+/* LanguageTool, a natural language style checker
  * Copyright (C) 2012 Daniel Naber (http://www.danielnaber.de)
- * 
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
@@ -18,11 +18,7 @@
  */
 package org.languagetool.rules.de;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -60,7 +56,7 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
   // according to http://www.spiegel.de/kultur/zwiebelfisch/zwiebelfisch-der-gebrauch-des-fugen-s-im-ueberblick-a-293195.html
   private static final Pattern ENDINGS_NEEDING_FUGENS = Pattern.compile(".*(tum|ling|ion|tät|keit|schaft|sicht|ung|en)");
   private static final int MAX_EDIT_DISTANCE = 2;
-  
+
   // some exceptions for changes to the spelling in 2017 - just a workaround so we don't have to touch the binary dict:
   private static final Pattern PREVENT_SUGGESTION = Pattern.compile(
           ".*(?i:Majonäse|Bravur|Anschovis|Belkanto|Campagne|Frotté|Grisli|Jokei|Joga|Kalvinismus|Kanossa|Kargo|Ketschup|" +
@@ -68,6 +64,7 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
   private static final Pattern GEOGRAPHICAL_PREFIXES = Pattern.compile("(nord|ost|süd|west).+");
 
   private static final Map<Pattern, Function<String,List<String>>> ADDITIONAL_SUGGESTIONS = new HashMap<>();
+
   static{
     put("[aA]wa", w -> Arrays.asList("AWA", "ach was", "aber"));
     put("[aA]lsallerersten?s", w -> Arrays.asList(w.replaceFirst("lsallerersten?s", "ls allererstes"), w.replaceFirst("lsallerersten?s", "ls Allererstes")));
@@ -215,6 +212,24 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
     synthesizer = language.getSynthesizer();
   }
 
+  public GermanSpellerRule(ResourceBundle messages, German language, File additionalSpellingFile) {
+    super(messages, language, language.getNonStrictCompoundSplitter(), additionalSpellingFile == null ? getSpeller(language) : getSpeller(language,additionalSpellingFile));
+    addExamplePair(Example.wrong("LanguageTool kann mehr als eine <marker>nromale</marker> Rechtschreibprüfung."),
+                    Example.fixed("LanguageTool kann mehr als eine <marker>normale</marker> Rechtschreibprüfung."));
+    compoundTokenizer = language.getStrictCompoundTokenizer();
+    tagger = language.getTagger();
+    synthesizer = language.getSynthesizer();
+  }
+
+  public GermanSpellerRule(ResourceBundle messages, German language, List<String> additionalWords) {
+    super(messages, language, language.getNonStrictCompoundSplitter(), additionalWords == null ? getSpeller(language) : getSpeller(language,additionalWords));
+    addExamplePair(Example.wrong("LanguageTool kann mehr als eine <marker>nromale</marker> Rechtschreibprüfung."),
+                    Example.fixed("LanguageTool kann mehr als eine <marker>normale</marker> Rechtschreibprüfung."));
+    compoundTokenizer = language.getStrictCompoundTokenizer();
+    tagger = language.getTagger();
+    synthesizer = language.getSynthesizer();
+  }
+
   @Override
   protected void init() throws IOException {
     super.init();
@@ -290,6 +305,35 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
 
   @Nullable
   private static MorfologikMultiSpeller getSpeller(Language language) {
+    return getSpeller(language, new ByteArrayInputStream(new byte[0]));
+  }
+
+  @Nullable
+  private static MorfologikMultiSpeller getSpeller(Language language, List<String> additionalWords) {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    for (String line : additionalWords) {
+      try {
+        line += "\r\n";
+        baos.write(line.getBytes());
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    }
+    byte[] bytes = baos.toByteArray();
+    return getSpeller(language, new ByteArrayInputStream(bytes));
+  }
+
+  @Nullable
+  private static MorfologikMultiSpeller getSpeller(Language language, File additionalSpellingFile) {
+    try {
+      return getSpeller(language,new FileInputStream(additionalSpellingFile));
+    } catch (FileNotFoundException e) {
+      e.printStackTrace();
+    }
+    return null;
+  }
+
+  private static MorfologikMultiSpeller getSpeller(Language language, InputStream additionalWords){
     if (!language.getShortCode().equals(Locale.GERMAN.getLanguage())) {
       throw new RuntimeException("Language is not a variant of German: " + language);
     }
@@ -298,8 +342,8 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
       if (JLanguageTool.getDataBroker().resourceExists(morfoFile)) {
         // spell data will not exist in LibreOffice/OpenOffice context
         String path = "/de/hunspell/spelling.txt";
-        try (InputStream stream = JLanguageTool.getDataBroker().getFromResourceDirAsStream(path);
-             BufferedReader br = new BufferedReader(new InputStreamReader(stream, "utf-8"))) {
+        try (InputStream streamDefault = JLanguageTool.getDataBroker().getFromResourceDirAsStream(path);
+             BufferedReader br = new BufferedReader(new InputStreamReader(new SequenceInputStream(streamDefault, additionalWords), "utf-8"))) {
           return new MorfologikMultiSpeller(morfoFile, new ExpandingReader(br), path, MAX_EDIT_DISTANCE);
         }
       } else {
@@ -309,6 +353,28 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
       throw new RuntimeException("Could not set up morfologik spell checker", e);
     }
   }
+
+//  @Nullable
+//  private static MorfologikMultiSpeller getSpeller(Language language) {
+//    if (!language.getShortCode().equals(Locale.GERMAN.getLanguage())) {
+//      throw new RuntimeException("Language is not a variant of German: " + language);
+//    }
+//    try {
+//      String morfoFile = "/de/hunspell/de_" + language.getCountries()[0] + ".dict";
+//      if (JLanguageTool.getDataBroker().resourceExists(morfoFile)) {
+//        // spell data will not exist in LibreOffice/OpenOffice context
+//        String path = "/de/hunspell/spelling.txt";
+//        try (InputStream stream = JLanguageTool.getDataBroker().getFromResourceDirAsStream(path);
+//             BufferedReader br = new BufferedReader(new InputStreamReader(stream, "utf-8"))) {
+//          return new MorfologikMultiSpeller(morfoFile, new ExpandingReader(br), path, MAX_EDIT_DISTANCE);
+//        }
+//      } else {
+//        return null;
+//      }
+//    } catch (IOException e) {
+//      throw new RuntimeException("Could not set up morfologik spell checker", e);
+//    }
+//  }
 
   @Override
   protected void filterForLanguage(List<String> suggestions) {
@@ -709,7 +775,7 @@ public class GermanSpellerRule extends CompoundAwareHunspellRule {
       // only search for compounds that start(!) with a word from spelling.txt
       int end = super.startsWithIgnoredWord(word, true);
       if (end < 3) {
-        // support for geographical adjectives - although "süd/ost/west/nord" are not in spelling.txt 
+        // support for geographical adjectives - although "süd/ost/west/nord" are not in spelling.txt
         // to accept sentences such as
         // "Der westperuanische Ferienort, das ostargentinische Städtchen, das südukrainische Brauchtum, der nordägyptische Staudamm."
         if (word.startsWith("ost") || word.startsWith("süd")) {
